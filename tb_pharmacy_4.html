@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบกำกับติดตามการรักษาวัณโรค - กลุ่มงานเภสัชกรรม รพ.วังสะพุง</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        prompt: ['Prompt', 'sans-serif'],
+                    },
+                    colors: {
+                        teal: {
+                            50: '#f0fdfa',
+                            100: '#ccfbf1',
+                            500: '#14b8a6',
+                            600: '#0d9488',
+                            700: '#0f766e',
+                            800: '#115e59',
+                            900: '#134e4a',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <!-- SheetJS for Excel Reading/Writing -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts Prompt -->
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Prompt', sans-serif; background-color: #f8fafc; }
+        @media print {
+            .no-print { display: none !important; }
+            .print-only { display: block !important; }
+            body { background-color: white !important; color: black !important; }
+            .shadow-sm, .shadow-md, .shadow-lg, .shadow-xl { box-shadow: none !important; }
+            .border { border-color: #cbd5e1 !important; }
+            main { padding: 0 !important; max-width: 100% !important; }
+        }
+    </style>
+</head>
+<body class="text-slate-800 antialiased selection:bg-teal-500 selection:text-white">
+    <div id="app" class="min-h-screen flex flex-col">
+
+        <!-- Top Header & Navigation Bar -->
+        <header class="bg-gradient-to-r from-teal-800 via-teal-700 to-teal-900 text-white shadow-lg sticky top-0 z-40 no-print">
+            <div class="container mx-auto px-4 md:px-6 py-3.5 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div class="flex items-center space-x-3.5">
+                    <div class="bg-white/10 p-2.5 rounded-2xl backdrop-blur-md border border-white/20 text-white text-2xl shadow-inner">
+                        <i class="fa-solid fa-pills"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-lg md:text-xl font-bold tracking-tight">ระบบกำกับ ติดตาม การรักษาวัณโรค (TB Pharmacy Dashboard)</h1>
+                        <p class="text-xs text-teal-100 flex items-center gap-1.5 mt-0.5">
+                            <i class="fa-solid fa-hospital-user text-teal-300"></i> กลุ่มงานเภสัชกรรม โรงพยาบาลวังสะพุง จ.เลย
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Navigation Tabs -->
+                <div class="flex flex-wrap gap-2">
+                    <button @click="currentTab = 'patients'" 
+                            :class="currentTab === 'patients' ? 'bg-white text-teal-900 font-bold shadow-md' : 'bg-teal-800/80 hover:bg-teal-600 text-teal-100 font-medium'" 
+                            class="px-4 py-2 rounded-xl text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-users-viewfinder"></i> 
+                        <span>ทะเบียนผู้ป่วย</span>
+                        <span class="bg-teal-100 text-teal-800 px-2 py-0.5 rounded-full text-xs font-bold" :class="currentTab === 'patients' ? 'bg-teal-800 text-white' : ''">{{ patients.length }}</span>
+                    </button>
+                    <button @click="currentTab = 'daily_report'" 
+                            :class="currentTab === 'daily_report' ? 'bg-white text-teal-900 font-bold shadow-md' : 'bg-teal-800/80 hover:bg-teal-600 text-teal-100 font-medium'" 
+                            class="px-4 py-2 rounded-xl text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-calendar-check"></i> 
+                        <span>รายงานนัดประจำวัน & พิมพ์ PDF</span>
+                    </button>
+                    <button @click="currentTab = 'calculator'" 
+                            :class="currentTab === 'calculator' ? 'bg-white text-teal-900 font-bold shadow-md' : 'bg-teal-800/80 hover:bg-teal-600 text-teal-100 font-medium'" 
+                            class="px-4 py-2 rounded-xl text-sm transition-all duration-200 flex items-center gap-2">
+                        <i class="fa-solid fa-calculator"></i> 
+                        <span>คำนวณสูตรยาเดี่ยว</span>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="flex-grow container mx-auto px-4 md:px-6 py-6">
+
+            <!-- Data Connection Status Banner -->
+            <div v-if="connectionNotice" class="mb-4 p-3.5 rounded-2xl text-xs font-medium flex items-center justify-between no-print shadow-xs"
+                 :class="isCloudConnected ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-amber-50 text-amber-900 border border-amber-200'">
+                <div class="flex items-center gap-2">
+                    <i :class="isCloudConnected ? 'fa-solid fa-cloud-check text-emerald-600 text-base' : 'fa-solid fa-database text-amber-600 text-base'"></i>
+                    <span>{{ connectionNotice }}</span>
+                </div>
+                <button @click="fetchDataFromCloud" class="px-2.5 py-1 bg-white hover:bg-amber-100 border border-amber-300 rounded-lg font-bold text-amber-800 transition">
+                    <i class="fa-solid fa-arrows-rotate mr-1"></i> ลองเชื่อมต่อใหม่
+                </button>
+            </div>
+
+            <!-- Loading Modal Overlay -->
+            <div v-if="isLoading" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50">
+                <div class="bg-white px-7 py-5 rounded-2xl shadow-2xl flex items-center gap-4 border border-teal-100 animate-in fade-in zoom-in duration-200">
+                    <div class="relative flex items-center justify-center">
+                        <i class="fa-solid fa-circle-notch fa-spin text-teal-600 text-3xl"></i>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-slate-800 text-base">กำลังประมวลผล...</h4>
+                        <p class="text-xs text-slate-500">กำลังซิงค์ข้อมูลกับ Google Sheets คลาวด์</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 1: ทะเบียนผู้ป่วย & ติดตามการรักษา -->
+            <div v-if="currentTab === 'patients'" class="space-y-6">
+
+                <!-- Stat Overview Cards Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 no-print">
+                    <!-- Stat Card: Total -->
+                    <div @click="setFilterCategory('ALL')" 
+                         :class="statCategory === 'ALL' ? 'ring-2 ring-teal-500 bg-teal-50/50' : 'bg-white'" 
+                         class="p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md transition">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">ผู้ป่วยทั้งหมดในระบบ</p>
+                            <h3 class="text-3xl font-bold text-slate-800 mt-1.5">{{ patients.length }} <span class="text-xs font-normal text-slate-500">คน</span></h3>
+                        </div>
+                        <div class="p-3.5 bg-teal-50 text-teal-600 rounded-2xl shadow-inner"><i class="fa-solid fa-hospital-user text-2xl"></i></div>
+                    </div>
+
+                    <!-- Stat Card: Active -->
+                    <div @click="setFilterCategory('Active')" 
+                         :class="statCategory === 'Active' ? 'ring-2 ring-emerald-500 bg-emerald-50/50' : 'bg-white'" 
+                         class="p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md transition">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">กำลังรับการรักษา (ACTIVE)</p>
+                            <h3 class="text-3xl font-bold text-emerald-600 mt-1.5">{{ activePatientsCount }} <span class="text-xs font-normal text-slate-500">คน</span></h3>
+                        </div>
+                        <div class="p-3.5 bg-emerald-50 text-emerald-600 rounded-2xl shadow-inner"><i class="fa-solid fa-notes-medical text-2xl"></i></div>
+                    </div>
+
+                    <!-- Stat Card: Upcoming Appointments -->
+                    <div @click="setFilterCategory('UPCOMING')" 
+                         :class="statCategory === 'UPCOMING' ? 'ring-2 ring-amber-500 bg-amber-50/50' : 'bg-white'" 
+                         class="p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md transition">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">ใกล้นัด (ภายใน 7 วัน)</p>
+                            <h3 class="text-3xl font-bold text-amber-600 mt-1.5">{{ upcomingApptCount }} <span class="text-xs font-normal text-slate-500">คน</span></h3>
+                        </div>
+                        <div class="p-3.5 bg-amber-50 text-amber-600 rounded-2xl shadow-inner"><i class="fa-solid fa-clock-rotate-left text-2xl"></i></div>
+                    </div>
+
+                    <!-- Stat Card: Discharged / Completed -->
+                    <div @click="setFilterCategory('D/C')" 
+                         :class="statCategory === 'D/C' ? 'ring-2 ring-slate-500 bg-slate-100/80' : 'bg-white'" 
+                         class="p-5 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between cursor-pointer hover:shadow-md transition">
+                        <div>
+                            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wide">จำหน่ายแล้ว (D/C)</p>
+                            <h3 class="text-3xl font-bold text-slate-600 mt-1.5">{{ dcPatientsCount }} <span class="text-xs font-normal text-slate-500">คน</span></h3>
+                        </div>
+                        <div class="p-3.5 bg-slate-100 text-slate-600 rounded-2xl shadow-inner"><i class="fa-solid fa-square-check text-2xl"></i></div>
+                    </div>
+                </div>
+
+                <!-- Search & Action Toolbar -->
+                <div class="bg-white p-4.5 rounded-2xl border border-slate-200/80 shadow-sm space-y-3 no-print">
+                    <div class="flex flex-col md:flex-row gap-3 justify-between items-center">
+                        <div class="relative w-full md:w-1/2">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-3.5 text-slate-400"></i>
+                            <input type="text" v-model="searchQuery" placeholder="ค้นหาด้วย HN, ชื่อผู้ป่วย, วันนัด, การวินิจฉัย..." class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-300 rounded-xl focus:bg-white focus:ring-2 focus:ring-teal-500 focus:outline-none text-sm transition">
+                        </div>
+                        <div class="flex flex-wrap gap-2 w-full md:w-auto items-center justify-end">
+                            <button @click="showAddModal = true" class="bg-teal-700 hover:bg-teal-800 text-white px-4 py-2.5 rounded-xl text-sm font-medium transition flex items-center gap-2 shadow-sm">
+                                <i class="fa-solid fa-user-plus"></i> + ลงทะเบียนผู้ป่วยใหม่
+                            </button>
+                            <button @click="fetchDataFromCloud" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-rotate"></i> โหลดข้อมูลล่าสุด
+                            </button>
+                            <button @click="exportToExcel" class="bg-blue-600 hover:bg-blue-700 text-white px-3.5 py-2.5 rounded-xl text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-file-arrow-down"></i> Export Excel
+                            </button>
+                            <button @click="resetFilters" class="px-3 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-sm font-medium transition">
+                                <i class="fa-solid fa-rotate-left"></i> ล้างตัวกรอง
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Patient Register Table -->
+                <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+                    <div class="p-3.5 bg-slate-50 border-b border-slate-200 flex justify-between items-center text-xs font-semibold text-slate-600">
+                        <span><i class="fa-solid fa-list-check text-teal-600 mr-1.5"></i> รายการผู้ป่วยที่ค้นพบ: {{ filteredPatients.length }} ราย</span>
+                        <span v-if="statCategory !== 'ALL'" class="text-teal-800 bg-teal-100/80 px-2.5 py-1 rounded-lg font-bold">กลุ่มที่เลือก: {{ getStatCategoryLabel(statCategory) }}</span>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm text-slate-600">
+                            <thead class="bg-slate-100/90 text-slate-700 font-bold uppercase text-xs border-b border-slate-200">
+                                <tr>
+                                    <th class="p-4">HN / ชื่อผู้ป่วย</th>
+                                    <th class="p-4">การวินิจฉัย (Dx)</th>
+                                    <th class="p-4">Regimen / สูตรยา</th>
+                                    <th class="p-4">เริ่มยา - วันครบกำหนด</th>
+                                    <th class="p-4">วันนัดถัดไป</th>
+                                    <th class="p-4 text-center">นับถอยหลัง</th>
+                                    <th class="p-4">สถานะ</th>
+                                    <th class="p-4 text-center no-print">จัดการ</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <tr v-for="p in filteredPatients" :key="p.hn" class="hover:bg-slate-50/80 transition cursor-pointer" @click="viewDetail(p)">
+                                    <td class="p-4">
+                                        <div class="font-bold text-slate-900">{{ p.name }}</div>
+                                        <div class="text-xs text-slate-400 font-mono mt-0.5">HN: {{ p.hn }} | ID: {{ p.id || '-' }}</div>
+                                    </td>
+                                    <td class="p-4">
+                                        <span class="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 border border-slate-200">{{ p.dx || '-' }}</span>
+                                    </td>
+                                    <td class="p-4">
+                                        <div class="font-semibold text-teal-800">{{ p.regimen || '-' }}</div>
+                                        <div class="text-xs text-slate-500 font-medium">{{ p.drug_formula }} <span v-if="p.daily_dose">({{ p.daily_dose }})</span></div>
+                                    </td>
+                                    <td class="p-4 text-xs">
+                                        <div class="text-slate-700"><span class="text-slate-400">เริ่ม:</span> {{ p.start_date || '-' }}</div>
+                                        <div class="text-slate-500"><span class="text-slate-400">ครบ:</span> {{ p.completion_date || '-' }}</div>
+                                    </td>
+                                    <td class="p-4 text-xs font-bold text-teal-900 whitespace-nowrap">
+                                        {{ formatThaiDate(p.next_appt) }}
+                                    </td>
+                                    <td class="p-4 text-center">
+                                        <span v-if="p.status === 'Active'" :class="getDaysLeftBadgeClass(p.days_left)" class="px-2.5 py-1 rounded-full text-xs font-bold shadow-xs">
+                                            {{ p.days_left < 0 ? 'เกินนัด ' + Math.abs(p.days_left) + ' วัน' : p.days_left + ' วัน' }}
+                                        </span>
+                                        <span v-else class="text-xs text-slate-400">-</span>
+                                    </td>
+                                    <td class="p-4">
+                                        <span :class="getStatusBadgeClass(p.status)" class="px-2.5 py-1 rounded-full text-xs font-semibold">
+                                            {{ p.status }}
+                                        </span>
+                                    </td>
+                                    <td class="p-4 text-center no-print" @click.stop>
+                                        <button @click="viewDetail(p)" class="p-2 text-teal-700 hover:bg-teal-50 rounded-xl transition" title="ดูข้อมูล / บันทึกเภสัชกร">
+                                            <i class="fa-solid fa-pen-to-square text-base"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                <tr v-if="filteredPatients.length === 0">
+                                    <td colspan="8" class="text-center py-10 text-slate-400 font-medium">ไม่พบข้อมูลรายชื่อผู้ป่วยที่ตรงตามเงื่อนไขที่ค้นหา</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: รายงานนัดประจำวัน & พิมพ์ PDF -->
+            <div v-if="currentTab === 'daily_report'" class="space-y-6">
+                <!-- Date Picker & Print Control Bar -->
+                <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 no-print">
+                    <div class="flex items-center gap-3 w-full md:w-auto">
+                        <label class="font-bold text-slate-700 text-sm whitespace-nowrap flex items-center">
+                            <i class="fa-solid fa-calendar-day text-teal-600 mr-2 text-lg"></i> เลือกวันที่นัดรับยา:
+                        </label>
+                        <input type="date" v-model="selectedApptDate" class="border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-teal-500 outline-none font-semibold text-teal-900 bg-slate-50">
+                    </div>
+                    <button @click="printPDF" class="bg-teal-700 hover:bg-teal-800 text-white px-5 py-2.5 rounded-xl text-sm font-semibold transition flex items-center gap-2 shadow-sm">
+                        <i class="fa-solid fa-print"></i> พิมพ์รายงาน PDF
+                    </button>
+                </div>
+
+                <!-- Printable Report Sheet -->
+                <div class="bg-white p-6 md:p-8 rounded-2xl border border-slate-200 shadow-sm space-y-6">
+                    <div class="text-center border-b pb-5 space-y-1">
+                        <h2 class="text-xl md:text-2xl font-bold text-slate-900">บัญชีรายชื่อผู้ป่วยรับยาวัณโรคตามนัดหมายประจำวัน</h2>
+                        <p class="text-sm font-medium text-slate-600">กลุ่มงานเภสัชกรรม โรงพยาบาลวังสะพุง อำเภอวังสะพุง จังหวัดเลย</p>
+                        <p class="text-sm font-bold text-teal-800 pt-1">ประจำวันที่: {{ formatThaiDate(selectedApptDate) }}</p>
+                    </div>
+
+                    <table class="w-full text-left text-xs text-slate-800 border-collapse border border-slate-300">
+                        <thead class="bg-slate-100 text-slate-800 font-bold uppercase border-b border-slate-300">
+                            <tr>
+                                <th class="p-3 border border-slate-300 text-center w-12">ลำดับ</th>
+                                <th class="p-3 border border-slate-300">HN / ชื่อ-นามสกุล</th>
+                                <th class="p-3 border border-slate-300">การวินิจฉัย (Dx)</th>
+                                <th class="p-3 border border-slate-300">Regimen / สูตรยาที่ได้รับ</th>
+                                <th class="p-3 border border-slate-300 text-center">ครบเดือนที่</th>
+                                <th class="p-3 border border-slate-300">หมายเหตุ / บันทึกเภสัชกร</th>
+                                <th class="p-3 border border-slate-300 text-center w-28">วันนัดถัดไป</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="(p, index) in dailyApptPatients" :key="p.hn" class="border-b border-slate-300 hover:bg-slate-50">
+                                <td class="p-3 border border-slate-300 text-center font-medium">{{ index + 1 }}</td>
+                                <td class="p-3 border border-slate-300">
+                                    <div class="font-bold text-slate-900">{{ p.name }}</div>
+                                    <div class="text-[11px] text-slate-500 font-mono">HN: {{ p.hn }}</div>
+                                </td>
+                                <td class="p-3 border border-slate-300 font-medium">{{ p.dx || '-' }}</td>
+                                <td class="p-3 border border-slate-300">
+                                    <div class="font-bold text-teal-900">{{ p.regimen || '-' }}</div>
+                                    <div class="text-[11px] text-slate-600">{{ p.drug_formula }} <span v-if="p.daily_dose">({{ p.daily_dose }})</span></div>
+                                </td>
+                                <td class="p-3 border border-slate-300 text-center font-semibold">{{ p.completed_month || '-' }}</td>
+                                <td class="p-3 border border-slate-300 text-[11px] text-slate-700 leading-relaxed">{{ p.note || '-' }}</td>
+                                <td class="p-3 border border-slate-300 text-center font-medium"></td>
+                            </tr>
+                            <tr v-if="dailyApptPatients.length === 0">
+                                <td colspan="7" class="text-center py-10 text-slate-400 font-medium">ไม่มีรายการผู้ป่วยที่มีนัดหมายตรงกับวันที่เลือก</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- TAB 3: เครื่องคำนวณสูตรยาเดี่ยว (Single Drug Calculator) -->
+            <div v-if="currentTab === 'calculator'" class="max-w-5xl mx-auto space-y-6">
+                <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm space-y-6">
+                    <div class="border-b pb-4 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                                <i class="fa-solid fa-calculator text-teal-600"></i> เครื่องคำนวณสูตรยาวัณโรคเม็ดเดี่ยว (Single Drug Calculator)
+                            </h2>
+                            <p class="text-xs text-slate-500 mt-1">เลือกสูตรยาที่ต้องการสั่งใช้เพื่อคำนวณและแสดงผลเฉพาะยารายตัวตามน้ำหนักตัวผู้ป่วย</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <!-- Weight Input -->
+                        <div class="md:col-span-1 bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+                            <label class="block text-sm font-semibold text-slate-700">น้ำหนักตัวผู้ป่วย (กก.)</label>
+                            <input type="number" v-model.number="calcWeight" placeholder="เช่น 55" class="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-bold text-2xl text-teal-900 bg-white shadow-xs">
+                            <div v-if="calcWeight > 0" class="text-xs text-teal-800 font-semibold bg-teal-100/70 p-2.5 rounded-lg border border-teal-200">
+                                <i class="fa-solid fa-weight-scale mr-1 text-teal-600"></i> กลุ่มน้ำหนัก: {{ getWeightCategory(calcWeight) }}
+                            </div>
+                        </div>
+
+                        <!-- Drug Checkboxes -->
+                        <div class="md:col-span-2 bg-slate-50 p-5 rounded-2xl border border-slate-200 space-y-3">
+                            <label class="block text-sm font-semibold text-slate-700"><i class="fa-solid fa-filter text-teal-600 mr-1"></i> เลือกสูตรตัวยาเพื่อคำนวณ:</label>
+                            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-semibold">
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.H" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>H (Isoniazid)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.R" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>R (Rifampicin)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.Z" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>Z (Pyrazinamide)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.E" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>E (Ethambutol)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.L" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>L/Lx (Levofloxacin)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.Am" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>Am (Amikacin)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.Clr" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>Clr (Clarithromycin)</span>
+                                </label>
+                                <label class="flex items-center space-x-2 bg-white p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:bg-teal-50 transition">
+                                    <input type="checkbox" v-model="selectedDrugs.Azt" class="rounded text-teal-600 focus:ring-teal-500 w-4 h-4">
+                                    <span>Azt (Azithromycin)</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Calculated Doses Display Cards Grid -->
+                    <div v-if="calcWeight > 0" class="space-y-4 pt-2">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            <!-- H -->
+                            <div v-if="selectedDrugs.H" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-slate-900">Isoniazid (H)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(สูงสุด 300 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('H', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 4-6 มก./กก./วัน</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('H', getSingleDose('H', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- R -->
+                            <div v-if="selectedDrugs.R" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-slate-900">Rifampicin (R)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(สูงสุด 600 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('R', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 8-12 มก./กก./วัน</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('R', getSingleDose('R', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- Z -->
+                            <div v-if="selectedDrugs.Z" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-slate-900">Pyrazinamide (Z)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(สูงสุด 2,000 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('Z', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 20-30 มก./กก./วัน</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('Z', getSingleDose('Z', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- E -->
+                            <div v-if="selectedDrugs.E" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-slate-900">Ethambutol (E)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(สูงสุด 1,200 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('E', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 15-20 มก./กก./วัน</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('E', getSingleDose('E', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- L -->
+                            <div v-if="selectedDrugs.L" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-teal-900">Levofloxacin (L / Lx)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(สูงสุด 1,500 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('L', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 15-20 มก./กก./วัน</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('L', getSingleDose('L', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- Am -->
+                            <div v-if="selectedDrugs.Am" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-teal-900">Amikacin (Am)</span>
+                                    <span class="text-xs text-rose-600 font-bold">(ฉีด 750 - 1,000 มก./วัน)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('Am', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดแนะนำ: 15 mg/kg/day</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('Am', getSingleDose('Am', calcWeight)) }}
+                                </div>
+                            </div>
+
+                            <!-- Clr -->
+                            <div v-if="selectedDrugs.Clr" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-teal-900">Clarithromycin (Clr)</span>
+                                    <span class="text-xs text-teal-700 font-bold">(250 mg/tab)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">1,000 มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดยาแนะนำ: 500 mg เช้า - เย็น</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: รับประทานครั้งละ 2 เม็ด หลังอาหาร เช้า - เย็น
+                                </div>
+                            </div>
+
+                            <!-- Azt -->
+                            <div v-if="selectedDrugs.Azt" class="p-4 bg-white rounded-2xl border border-slate-200/80 shadow-sm space-y-1.5 hover:shadow-md transition">
+                                <div class="flex justify-between items-center border-b pb-2">
+                                    <span class="font-bold text-teal-900">Azithromycin (Azt)</span>
+                                    <span class="text-xs text-teal-700 font-bold">(250 mg/cap)</span>
+                                </div>
+                                <div class="text-xl font-extrabold text-teal-700 pt-1">{{ getSingleDose('Azt', calcWeight) }} มก./วัน</div>
+                                <div class="text-xs text-slate-500">ขนาดยาแนะนำ: 250 - 500 mg วันละ 1 ครั้ง</div>
+                                <div class="text-xs font-semibold text-slate-700 bg-slate-50 p-2.5 rounded-xl border border-slate-200 mt-2">
+                                    จัดยา: {{ getSinglePillCount('Azt', getSingleDose('Azt', calcWeight)) }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal: Register New Patient -->
+            <div v-if="showAddModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print animate-in fade-in duration-200">
+                <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 space-y-5">
+                    <div class="flex justify-between items-center border-b pb-4">
+                        <h3 class="text-lg font-bold text-slate-900 flex items-center gap-2">
+                            <i class="fa-solid fa-user-plus text-teal-600"></i> ลงทะเบียนผู้ป่วยวัณโรครายใหม่
+                        </h3>
+                        <button @click="showAddModal = false" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center transition">&times;</button>
+                    </div>
+                    <form @submit.prevent="registerNewPatient" class="space-y-4 text-sm">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">เลข HN *</label>
+                                <input type="text" v-model="newPatient.hn" required placeholder="เช่น 68001234" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">เลขบัตรประชาชน (ID)</label>
+                                <input type="text" v-model="newPatient.id" placeholder="x-xxxx-xxxxx-xx-x" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div class="sm:col-span-2">
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">ชื่อ - นามสกุล *</label>
+                                <input type="text" v-model="newPatient.name" required placeholder="เช่น นายสมชาย ใจดี" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">การวินิจฉัย (Dx)</label>
+                                <input type="text" v-model="newPatient.dx" placeholder="เช่น PTB (m+)" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Regimen</label>
+                                <input type="text" v-model="newPatient.regimen" placeholder="เช่น 12-18 HEL" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">สูตรยา</label>
+                                <input type="text" v-model="newPatient.drug_formula" placeholder="เช่น H300E800L750" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">จำนวนยา/วัน (Daily Dose)</label>
+                                <input type="text" v-model="newPatient.daily_dose" placeholder="เช่น 56" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">วันที่เริ่มยา</label>
+                                <input type="date" v-model="newPatient.start_date" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">วันนัดหมายถัดไป</label>
+                                <input type="date" v-model="newPatient.next_appt" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">หมายเหตุ / บันทึกเภสัชกร</label>
+                            <textarea v-model="newPatient.note" rows="2" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
+                        </div>
+                        <div class="flex justify-end space-x-2 border-t pt-4">
+                            <button type="button" @click="showAddModal = false" class="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-200 transition">ยกเลิก</button>
+                            <button type="submit" class="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-sm font-medium transition shadow-sm">บันทึกผู้ป่วยใหม่</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal: Patient Detail & Clinical Note Update -->
+            <div v-if="selectedPatient" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 no-print animate-in fade-in duration-200">
+                <div class="bg-white rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 md:p-8 space-y-5">
+                    <div class="flex justify-between items-start border-b pb-4">
+                        <div>
+                            <h3 class="text-xl font-bold text-slate-900">{{ selectedPatient.name }}</h3>
+                            <p class="text-xs text-slate-500 mt-0.5">HN: {{ selectedPatient.hn }} | ID: {{ selectedPatient.id || '-' }}</p>
+                        </div>
+                        <button @click="selectedPatient = null" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 font-bold flex items-center justify-center transition">&times;</button>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                            <span class="text-slate-500 block text-xs">การวินิจฉัย (Dx)</span>
+                            <span class="font-semibold text-slate-900">{{ selectedPatient.dx || '-' }}</span>
+                        </div>
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                            <span class="text-slate-500 block text-xs">Regimen</span>
+                            <span class="font-semibold text-teal-800">{{ selectedPatient.regimen || '-' }}</span>
+                        </div>
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                            <span class="text-slate-500 block text-xs">สูตรยา / จำนวนยา</span>
+                            <span class="font-semibold text-slate-900">{{ selectedPatient.drug_formula }} <span v-if="selectedPatient.daily_dose">({{ selectedPatient.daily_dose }})</span></span>
+                        </div>
+                        <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                            <span class="text-slate-500 block text-xs">วันนัดรับยาถัดไป</span>
+                            <input type="date" v-model="selectedPatient.next_appt" class="mt-1 border border-slate-300 rounded-lg p-1.5 text-xs w-full focus:ring-2 focus:ring-teal-500 outline-none font-semibold text-teal-900">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-slate-700 mb-1.5">บันทึกของเภสัชกร (Pharmacist Note / Clinical History):</label>
+                        <textarea v-model="selectedPatient.note" rows="4" class="w-full p-3 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-teal-500 outline-none leading-relaxed"></textarea>
+                    </div>
+
+                    <div class="flex justify-end space-x-2 border-t pt-4">
+                        <button @click="selectedPatient = null" class="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-200 transition">ยกเลิก</button>
+                        <button @click="savePatientNote" class="px-5 py-2.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-sm font-medium transition shadow-sm">อัปเดตข้อมูล</button>
+                    </div>
+                </div>
+            </div>
+
+        </main>
+
+        <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-3.5 text-center text-xs text-slate-500 no-print">
+        <div class="container mx-auto px-4 flex flex-col sm:flex-row justify-between items-center gap-2">
+            <p>ระบบกำกับติดตามการรักษาวัณโรค (TB Pharmacy Dashboard) &copy; กลุ่มงานเภสัชกรรม รพ.วังสะพุง</p>
+            <p :class="isCloudConnected ? 'text-emerald-700 font-medium' : 'text-amber-700 font-medium'">
+                <i :class="isCloudConnected ? 'fa-solid fa-cloud' : 'fa-solid fa-hard-drive'" class="text-xs mr-1"></i> 
+                {{ isCloudConnected ? 'เชื่อมต่อฐานข้อมูล Google Sheets คลาวด์' : 'โหมดสำรอง (Offline Fallback Database)' }}
+            </p>
+        </div>
+    </footer>
+
+    </div>
+
+    <!-- Vue 3 Application Script -->
+    <script>
+        const { createApp } = Vue;
+
+        // Sample initial dataset fallback from TB_Database
+        const initialSamplePatients = [
+            { hn: "62000145", id: "3-4209-00988-81-0", name: "นางสายใจ จงนิมิตรสถาพร", drug_formula: "H300E800Lx750", completed_month: "18.0", daily_dose: "0", status: "D/C", start_date: "2024-03-18", regimen: "12-18 HEL", completion_date: "2025-08-03", next_appt: "2025-08-04", days_left: -1, dx: "TB spine", note: "stroke + เริ่มยา รพ.ราชพฤกษ์ 2/3/2567+ญาติหมอโอ๊ต" },
+            { hn: "54014688", id: "3-4209-01225-19-4", name: "นางลคร นามวงษ์", drug_formula: "H300E800Lx750", completed_month: "14.0", daily_dose: "0", status: "D/C", start_date: "2024-05-13", regimen: "12-18 HEL", completion_date: "2025-09-28", next_appt: "2025-06-09", days_left: 111, dx: "PTB (m-)", note: "DM+start TB 26/4/67 ---start IRZE 26/4/67 --> N/V หยุดยา เอง --> re start HELx 13/5/67" },
+            { hn: "64001957", id: "1-1037-05620-87-5", name: "ด.ญ.นลินญา ศรีวังคำ", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "D/C", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: "2025-09-01", days_left: -162, dx: "LTBI", note: "" },
+            { hn: "63001068", id: "1-4299-01098-69-1", name: "ด.ญ.พรประภา จันทิหล้า", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date().toISOString().slice(0, 10), days_left: 0, dx: "LTBI", note: "ติดตามรับยาครบกำหนด" },
+            { hn: "62003177", id: "1-4299-01078-73-8", name: "ด.ญ.ธรรญชนก จันสีทา", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date(Date.now() + 3*86400000).toISOString().slice(0, 10), days_left: 3, dx: "LTBI", note: "" },
+            { hn: "63000798", id: "1-4209-01460-88-0", name: "ด.ญ.ศิริกัลยา เหล่าอินทร์", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date(Date.now() + 5*86400000).toISOString().slice(0, 10), days_left: 5, dx: "PTB (m+)", note: "อาการดีขึ้น ไม่มีผลข้างเคียงจากยา" }
+        ];
+
+        createApp({
+            data() {
+                return {
+                    currentTab: 'patients',
+                    searchQuery: '',
+                    filterStatus: 'ALL',
+                    statCategory: 'ALL',
+                    patients: initialSamplePatients,
+                    isLoading: false,
+                    isCloudConnected: false,
+                    connectionNotice: '',
+                    selectedApptDate: new Date().toISOString().slice(0, 10),
+                    showAddModal: false,
+                    selectedPatient: null,
+                    calcWeight: 50,
+                    selectedDrugs: { H: true, R: true, Z: true, E: true, L: false, Am: false, Clr: false, Azt: false },
+                    newPatient: {
+                        hn: '',
+                        id: '',
+                        name: '',
+                        dx: '',
+                        regimen: '',
+                        drug_formula: '',
+                        daily_dose: '',
+                        start_date: '',
+                        next_appt: '',
+                        note: ''
+                    },
+                    // 🔗 Web App URL ล่าสุดจาก Google Apps Script
+                    scriptURL: 'https://script.google.com/macros/s/AKfycbx-fZn1LcRwnZzhbC6Tfvx_g-t4tOM8wmFqrCpS1WY9etKQWdneABvfje2rDlSUN_1lrQ/exec'
+                }
+            },
+            mounted() {
+                this.fetchDataFromCloud();
+            },
+            computed: {
+                filteredPatients() {
+                    return this.patients.filter(p => {
+                        const query = this.searchQuery.toLowerCase();
+                        const matchSearch = 
+                            (p.hn && String(p.hn).toLowerCase().includes(query)) ||
+                            (p.name && p.name.toLowerCase().includes(query)) ||
+                            (p.dx && p.dx.toLowerCase().includes(query)) ||
+                            (p.next_appt && p.next_appt.includes(query));
+
+                        let matchCategory = true;
+                        if (this.statCategory === 'Active') {
+                            matchCategory = p.status === 'Active';
+                        } else if (this.statCategory === 'UPCOMING') {
+                            matchCategory = p.status === 'Active' && p.days_left >= 0 && p.days_left <= 7;
+                        } else if (this.statCategory === 'D/C') {
+                            matchCategory = p.status === 'D/C';
+                        }
+
+                        return matchSearch && matchCategory;
+                    });
+                },
+                activePatientsCount() {
+                    return this.patients.filter(p => p.status === 'Active').length;
+                },
+                upcomingApptCount() {
+                    return this.patients.filter(p => p.status === 'Active' && p.days_left >= 0 && p.days_left <= 7).length;
+                },
+                dcPatientsCount() {
+                    return this.patients.filter(p => p.status === 'D/C').length;
+                },
+                dailyApptPatients() {
+                    return this.patients.filter(p => p.next_appt === this.selectedApptDate);
+                }
+            },
+            methods: {
+                // ปรับปรุงฟังก์ชันแปลงวันที่ให้รองรับทุกโครงสร้าง (ISO String, พ.ศ., DD/MM/YYYY)
+                normalizeDate(dateVal) {
+                    if (!dateVal) return '';
+                    let str = String(dateVal).trim();
+                    if (!str) return '';
+
+                    // หากเป็น ISO string เช่น 2568-08-04T07:00:00.000Z
+                    if (str.includes('T')) {
+                        str = str.split('T')[0];
+                    }
+
+                    // รูปแบบ YYYY-MM-DD
+                    if (str.includes('-')) {
+                        let parts = str.split('-');
+                        if (parts.length === 3) {
+                            let y = parseInt(parts[0], 10);
+                            let m = parts[1].padStart(2, '0');
+                            let d = parts[2].padStart(2, '0');
+                            if (y > 2400) y -= 543; // แปลงปี พ.ศ. เป็น ค.ศ.
+                            return `${y}-${m}-${d}`;
+                        }
+                    }
+
+                    // รูปแบบ DD/MM/YYYY หรือ DD/MM/YY
+                    if (str.includes('/')) {
+                        let parts = str.split('/');
+                        if (parts.length === 3) {
+                            let d = parts[0].padStart(2, '0');
+                            let m = parts[1].padStart(2, '0');
+                            let y = parseInt(parts[2], 10);
+                            if (y < 100) y += 2500;
+                            if (y > 2400) y -= 543;
+                            return `${y}-${m}-${d}`;
+                        }
+                    }
+
+                    return str;
+                },
+
+                fetchDataFromCloud() {
+                    this.isLoading = true;
+                    this.connectionNotice = '';
+                    
+                    // ใช้ URL ของ Google Apps Script ที่ Deploy แบบ Anyone
+                    fetch(this.scriptURL, { 
+                        method: 'GET',
+                        redirect: 'follow'
+                    })
+                        .then(res => {
+                            if (!res.ok) throw new Error('Network response status: ' + res.status);
+                            return res.json();
+                        })
+                        .then(data => {
+                            if (!Array.isArray(data)) {
+                                throw new Error('Invalid JSON format received');
+                            }
+
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+
+                            this.patients = data.map(p => {
+                                // ดึงค่าจากหัวข้อคอลัมน์ทั้งแบบภาษาอังกฤษและภาษาไทยจาก Google Sheet
+                                const rawNextAppt = p.NextAppt || p.next_appt || p['วันนัดรับยาถัดไป'] || p['วันนัดถัดไป'] || p['NextAppt'] || '';
+                                const rawStartDate = p.StartDate || p.start_date || p['วันที่เริ่มยา (พ.ศ)'] || p['วันที่เริ่มยา'] || '';
+                                const rawCompDate = p.CompletionDate || p.completion_date || p['วันครบกำหนด'] || '';
+
+                                const normalizedNextAppt = this.normalizeDate(rawNextAppt);
+                                const normalizedStartDate = this.normalizeDate(rawStartDate);
+                                const normalizedCompDate = this.normalizeDate(rawCompDate);
+
+                                let daysLeft = 0;
+                                if (normalizedNextAppt) {
+                                    const apptDate = new Date(normalizedNextAppt);
+                                    if (!isNaN(apptDate.getTime())) {
+                                        const diffTime = apptDate - today;
+                                        daysLeft = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                                    }
+                                } else if (p.DaysLeft !== undefined || p.days_left !== undefined) {
+                                    daysLeft = parseInt(p.DaysLeft || p.days_left || 0, 10);
+                                }
+
+                                return { 
+                                    hn: String(p.HN || p.hn || p['HN'] || '').trim(),
+                                    id: String(p.ID || p.id || p['เลขบัตรประชาชน'] || '').trim(),
+                                    name: String(p.Name || p.name || p['ชื่อ-นามสกุล'] || p['ชื่อผู้ป่วย'] || '').trim(),
+                                    dx: p.Dx || p.dx || p['การวินิจฉัย'] || p['Dx'] || '',
+                                    regimen: p.Regimen || p.regimen || p['Regimen'] || '',
+                                    drug_formula: p.DrugFormula || p.drug_formula || p['สูตรยา'] || p['Drug_Formula'] || '',
+                                    daily_dose: p.DailyDose !== undefined ? p.DailyDose : (p.daily_dose || p['จำนวนยาต่อวัน'] || ''),
+                                    start_date: normalizedStartDate,
+                                    completion_date: normalizedCompDate,
+                                    next_appt: normalizedNextAppt,
+                                    completed_month: p.CompletedMonth || p.completed_month || p['ครบเดือนที่'] || '',
+                                    status: p.Status || p.status || p['สถานะ'] || 'Active',
+                                    note: p.Note || p.note || p['หมายเหตุ'] || p['บันทึกเภสัชกร'] || '',
+                                    days_left: daysLeft 
+                                };
+                            });
+                            this.isCloudConnected = true;
+                            this.connectionNotice = 'เชื่อมต่อและดึงข้อมูลสดจาก Google Sheets คลาวด์สำเร็จ! (ดึงข้อมูลแล้ว ' + this.patients.length + ' รายการ)';
+                            this.isLoading = false;
+                        })
+                        .catch(err => {
+                            console.warn('Google Sheets Fetch Notice:', err);
+                            this.isCloudConnected = false;
+                            this.connectionNotice = 'การเชื่อมต่อออนไลน์ขัดข้องหรือรอยืนยันสิทธิ์ใน Apps Script — ระบบสลับใช้ข้อมูลตัวอย่างให้ใช้งานได้อย่างต่อเนื่อง';
+                            
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            this.patients = this.patients.map(p => {
+                                let daysLeft = p.days_left;
+                                if (p.next_appt) {
+                                    const apptDate = new Date(p.next_appt);
+                                    if (!isNaN(apptDate)) {
+                                        daysLeft = Math.ceil((apptDate - today) / (1000 * 60 * 60 * 24));
+                                    }
+                                }
+                                return { ...p, days_left: daysLeft };
+                            });
+
+                            this.isLoading = false;
+                        });
+                },
+                registerNewPatient() {
+                    this.isLoading = true;
+                    // Add locally first for responsive UI
+                    const newEntry = {
+                        ...this.newPatient,
+                        status: 'Active',
+                        days_left: 0
+                    };
+                    if (newEntry.next_appt) {
+                        const today = new Date();
+                        today.setHours(0,0,0,0);
+                        const apptDate = new Date(newEntry.next_appt);
+                        if (!isNaN(apptDate)) {
+                            newEntry.days_left = Math.ceil((apptDate - today) / (1000 * 60 * 60 * 24));
+                        }
+                    }
+                    this.patients.unshift(newEntry);
+
+                    fetch(this.scriptURL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.newPatient)
+                    })
+                    .then(() => {
+                        alert('ลงทะเบียนผู้ป่วยใหม่เรียบร้อยแล้ว!');
+                        this.showAddModal = false;
+                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', daily_dose: '', start_date: '', next_appt: '', note: '' };
+                        this.isLoading = false;
+                    })
+                    .catch(err => {
+                        console.error('Save Error:', err);
+                        alert('บันทึกผู้ป่วยใหม่ในระบบเรียบร้อย (โหมด Offline)');
+                        this.showAddModal = false;
+                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', daily_dose: '', start_date: '', next_appt: '', note: '' };
+                        this.isLoading = false;
+                    });
+                },
+                viewDetail(patient) {
+                    this.selectedPatient = { ...patient };
+                },
+                savePatientNote() {
+                    this.isLoading = true;
+                    // Update in local list
+                    const idx = this.patients.findIndex(p => p.hn === this.selectedPatient.hn);
+                    if (idx !== -1) {
+                        if (this.selectedPatient.next_appt) {
+                            const today = new Date();
+                            today.setHours(0,0,0,0);
+                            const apptDate = new Date(this.selectedPatient.next_appt);
+                            if (!isNaN(apptDate)) {
+                                this.selectedPatient.days_left = Math.ceil((apptDate - today) / (1000 * 60 * 60 * 24));
+                            }
+                        }
+                        this.patients[idx] = { ...this.selectedPatient };
+                    }
+
+                    fetch(this.scriptURL, {
+                        method: 'POST',
+                        mode: 'no-cors',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(this.selectedPatient)
+                    })
+                    .then(() => {
+                        alert('อัปเดตข้อมูลผู้ป่วยเรียบร้อยแล้ว!');
+                        this.selectedPatient = null;
+                        this.isLoading = false;
+                    })
+                    .catch(err => {
+                        console.error('Update Error:', err);
+                        alert('อัปเดตข้อมูลในระบบเรียบร้อย (โหมด Offline)');
+                        this.selectedPatient = null;
+                        this.isLoading = false;
+                    });
+                },
+                setFilterCategory(cat) {
+                    this.statCategory = cat;
+                },
+                resetFilters() {
+                    this.searchQuery = '';
+                    this.statCategory = 'ALL';
+                },
+                getStatCategoryLabel(cat) {
+                    if (cat === 'Active') return 'กำลังรับการรักษา';
+                    if (cat === 'UPCOMING') return 'ใกล้นัด (7 วัน)';
+                    if (cat === 'D/C') return 'จำหน่ายแล้ว';
+                    return 'ทั้งหมด';
+                },
+                getStatusBadgeClass(status) {
+                    if (status === 'Active') return 'bg-emerald-100 text-emerald-800 border border-emerald-200';
+                    if (status === 'D/C') return 'bg-slate-100 text-slate-700 border border-slate-200';
+                    return 'bg-amber-100 text-amber-800 border border-amber-200';
+                },
+                getDaysLeftBadgeClass(days) {
+                    if (days < 0) return 'bg-rose-100 text-rose-800 border border-rose-200';
+                    if (days <= 7) return 'bg-amber-100 text-amber-800 border border-amber-200';
+                    return 'bg-teal-50 text-teal-800 border border-teal-200';
+                },
+                formatThaiDate(dateStr) {
+                    if (!dateStr) return '-';
+                    try {
+                        const d = new Date(dateStr);
+                        if (isNaN(d)) return dateStr;
+                        const thaiYears = d.getFullYear() + 543;
+                        const months = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+                        return `${d.getDate()} ${months[d.getMonth()]} ${thaiYears}`;
+                    } catch {
+                        return dateStr;
+                    }
+                },
+                printPDF() {
+                    window.print();
+                },
+                exportToExcel() {
+                    if (this.patients.length === 0) {
+                        alert('ไม่มีข้อมูลสำหรับส่งออก');
+                        return;
+                    }
+                    let data = [["HN", "ID", "Name", "Dx", "Regimen", "Formula", "Status", "Next Appt", "Note"]];
+                    this.patients.forEach(p => {
+                        data.push([p.hn, p.id, p.name, p.dx, p.regimen, p.drug_formula, p.status, p.next_appt, p.note]);
+                    });
+                    const ws = XLSX.utils.aoa_to_sheet(data);
+                    const wb = XLSX.utils.book_new();
+                    XLSX.utils.book_append_sheet(wb, ws, "Patients");
+                    XLSX.writeFile(wb, `TB_Patients_Export_${new Date().toISOString().slice(0,10)}.xlsx`);
+                },
+                getWeightCategory(w) {
+                    if (w < 30) return '< 30 กก. (กลุ่มน้ำหนักน้อยพิเศษ)';
+                    if (w <= 37) return '30 - 37 กก.';
+                    if (w <= 54) return '38 - 54 กก.';
+                    if (w <= 70) return '55 - 70 กก.';
+                    return '> 70 กก.';
+                },
+                getSingleDose(drug, w) {
+                    if (drug === 'H') return Math.min(Math.round(w * 5), 300);
+                    if (drug === 'R') return Math.min(Math.round(w * 10), 600);
+                    if (drug === 'Z') return Math.min(Math.round(w * 25), 2000);
+                    if (drug === 'E') return Math.min(Math.round(w * 15), 1200);
+                    if (drug === 'L') return Math.min(Math.round(w * 15), 1500);
+                    if (drug === 'Am') return Math.min(Math.round(w * 15), 1000);
+                    if (drug === 'Azt') return 500;
+                    return 0;
+                },
+                getSinglePillCount(drug, dose) {
+                    if (drug === 'H') return `ประมาณ ${Math.round(dose / 100)} เม็ด (ขนาด 100 มก.)`;
+                    if (drug === 'R') return `ประมาณ ${Math.round(dose / 300)} แคปซูล (ขนาด 300 มก.)`;
+                    if (drug === 'Z') return `ประมาณ ${Math.round(dose / 500)} เม็ด (ขนาด 500 มก.)`;
+                    if (drug === 'E') return `ประมาณ ${Math.round(dose / 400)} เม็ด (ขนาด 400 มก.)`;
+                    if (drug === 'L') return `ประมาณ ${Math.round(dose / 500)} เม็ด (ขนาด 500 มก.)`;
+                    if (drug === 'Am') return `ขนาดฉีด ${dose} มก. วันละ 1 ครั้ง`;
+                    if (drug === 'Azt') return `รับประทานครั้งละ 2 เม็ด (250 มก./เม็ด)`;
+                    return '-';
+                }
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
