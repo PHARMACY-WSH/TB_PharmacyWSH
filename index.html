@@ -516,32 +516,59 @@
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-700 mb-1">การวินิจฉัย (Dx)</label>
-                                <input type="text" v-model="newPatient.dx" placeholder="เช่น PTB (m+)" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <input type="text" v-model="newPatient.dx" placeholder="เช่น PTB (m+), LTBI, TB spine" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-slate-700 mb-1">Regimen</label>
-                                <input type="text" v-model="newPatient.regimen" placeholder="เช่น 12-18 HEL" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">Regimen *</label>
+                                <select v-model="newPatient.regimen" @change="onRegimenChange" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none bg-white font-semibold text-teal-900">
+                                    <option value="">-- เลือก หรือพิมพ์ระบุ Regimen --</option>
+                                    <option value="2HRZE/4HR">2HRZE/4HR (6 เดือน / 168 วัน)</option>
+                                    <option value="2HRZE/7HR">2HRZE/7HR (9 เดือน / 252 วัน)</option>
+                                    <option value="9H">9H (9 เดือน / 252 วัน)</option>
+                                    <option value="4H">4H (4 เดือน / 112 วัน)</option>
+                                    <option value="3HP">3HP (12 สัปดาห์ / 84 วัน)</option>
+                                    <option value="12-18 HEL">12-18 HEL (12-18 เดือน / 504 วัน)</option>
+                                    <option value="Custom">ระบุ Regimen อื่นๆ...</option>
+                                </select>
+                                <input v-if="newPatient.regimen === 'Custom' || !isPresetRegimen(newPatient.regimen)" type="text" v-model="customRegimenInput" @input="onCustomRegimenInput" placeholder="พิมพ์ Regimen เช่น 2HPMZ/2HPM" class="w-full mt-2 p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-slate-700 mb-1">สูตรยา</label>
-                                <input type="text" v-model="newPatient.drug_formula" placeholder="เช่น H300E800L750" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">สูตรยา (Drug Formula)</label>
+                                <input type="text" v-model="newPatient.drug_formula" placeholder="เช่น H300E800Lx750 หรือ 2(200)" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">จำนวนวัน (คำนวณจาก Regimen)</label>
+                                <input type="number" v-model.number="newPatient.total_days" @input="calculateCompletionDate" placeholder="เช่น 168 หรือ 252" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-bold text-teal-800 bg-slate-50">
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-700 mb-1">จำนวนยา/วัน (Daily Dose)</label>
-                                <input type="text" v-model="newPatient.daily_dose" placeholder="เช่น 56" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <input type="text" v-model="newPatient.daily_dose" placeholder="เช่น 0 หรือ 4" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
                             </div>
                             <div>
                                 <label class="block text-xs font-semibold text-slate-700 mb-1">วันที่เริ่มยา</label>
-                                <input type="date" v-model="newPatient.start_date" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <input type="date" v-model="newPatient.start_date" @change="calculateCompletionDate" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-medium">
                             </div>
                             <div>
-                                <label class="block text-xs font-semibold text-slate-700 mb-1">วันนัดหมายถัดไป</label>
-                                <input type="date" v-model="newPatient.next_appt" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none">
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">วันครบกำหนด off ยา (Completion Date)</label>
+                                <input type="date" v-model="newPatient.completion_date" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-medium bg-slate-50">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">วันนัดหมายรับยาถัดไป (Next Appt)</label>
+                                <input type="date" v-model="newPatient.next_appt" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none font-bold text-teal-900">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-700 mb-1">สถานะ (Status)</label>
+                                <select v-model="newPatient.status" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none bg-white">
+                                    <option value="Active">Active (กำลังรับการรักษา)</option>
+                                    <option value="D/C">D/C (จำหน่ายแล้ว/ครบรักษา)</option>
+                                    <option value="Refer">Refer (ส่งต่อ)</option>
+                                    <option value="Dead">Dead (เสียชีวิต)</option>
+                                </select>
                             </div>
                         </div>
                         <div>
-                            <label class="block text-xs font-semibold text-slate-700 mb-1">หมายเหตุ / บันทึกเภสัชกร</label>
-                            <textarea v-model="newPatient.note" rows="2" class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
+                            <label class="block text-xs font-semibold text-slate-700 mb-1">หมายเหตุ / บันทึกเภสัชกร (Note)</label>
+                            <textarea v-model="newPatient.note" rows="2" placeholder="เช่น ประวัติแพ้ยา, โรคประจำตัว, บันทึกพิเศษ..." class="w-full p-2.5 border rounded-xl focus:ring-2 focus:ring-teal-500 outline-none"></textarea>
                         </div>
                         <div class="flex justify-end space-x-2 border-t pt-4">
                             <button type="button" @click="showAddModal = false" class="px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl text-sm font-medium hover:bg-slate-200 transition">ยกเลิก</button>
@@ -614,12 +641,12 @@
 
         // Sample initial dataset fallback from TB_Database
         const initialSamplePatients = [
-            { hn: "62000145", id: "3-4209-00988-81-0", name: "นางสายใจ จงนิมิตรสถาพร", drug_formula: "H300E800Lx750", completed_month: "18.0", daily_dose: "0", status: "D/C", start_date: "2024-03-18", regimen: "12-18 HEL", completion_date: "2025-08-03", next_appt: "2025-08-04", days_left: -1, dx: "TB spine", note: "stroke + เริ่มยา รพ.ราชพฤกษ์ 2/3/2567+ญาติหมอโอ๊ต" },
-            { hn: "54014688", id: "3-4209-01225-19-4", name: "นางลคร นามวงษ์", drug_formula: "H300E800Lx750", completed_month: "14.0", daily_dose: "0", status: "D/C", start_date: "2024-05-13", regimen: "12-18 HEL", completion_date: "2025-09-28", next_appt: "2025-06-09", days_left: 111, dx: "PTB (m-)", note: "DM+start TB 26/4/67 ---start IRZE 26/4/67 --> N/V หยุดยา เอง --> re start HELx 13/5/67" },
-            { hn: "64001957", id: "1-1037-05620-87-5", name: "ด.ญ.นลินญา ศรีวังคำ", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "D/C", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: "2025-09-01", days_left: -162, dx: "LTBI", note: "" },
-            { hn: "63001068", id: "1-4299-01098-69-1", name: "ด.ญ.พรประภา จันทิหล้า", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date().toISOString().slice(0, 10), days_left: 0, dx: "LTBI", note: "ติดตามรับยาครบกำหนด" },
-            { hn: "62003177", id: "1-4299-01078-73-8", name: "ด.ญ.ธรรญชนก จันสีทา", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date(Date.now() + 3*86400000).toISOString().slice(0, 10), days_left: 3, dx: "LTBI", note: "" },
-            { hn: "63000798", id: "1-4209-01460-88-0", name: "ด.ญ.ศิริกัลยา เหล่าอินทร์", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", completion_date: "2025-03-23", next_appt: new Date(Date.now() + 5*86400000).toISOString().slice(0, 10), days_left: 5, dx: "PTB (m+)", note: "อาการดีขึ้น ไม่มีผลข้างเคียงจากยา" }
+            { hn: "62000145", id: "3-4209-00988-81-0", name: "นางสายใจ จงนิมิตรสถาพร", drug_formula: "H300E800Lx750", completed_month: "18.0", daily_dose: "0", status: "D/C", start_date: "2024-03-18", regimen: "12-18 HEL", total_days: 504, completion_date: "2025-08-03", next_appt: "2025-08-04", days_left: -1, dx: "TB spine", note: "stroke + เริ่มยา รพ.ราชพฤกษ์ 2/3/2567+ญาติหมอโอ๊ต" },
+            { hn: "54014688", id: "3-4209-01225-19-4", name: "นางลคร นามวงษ์", drug_formula: "H300E800Lx750", completed_month: "14.0", daily_dose: "0", status: "D/C", start_date: "2024-05-13", regimen: "12-18 HEL", total_days: 504, completion_date: "2025-09-28", next_appt: "2025-06-09", days_left: 111, dx: "PTB (m-)", note: "DM+start TB 26/4/67 ---start IRZE 26/4/67 --> N/V หยุดยา เอง --> re start HELx 13/5/67" },
+            { hn: "64001957", id: "1-1037-05620-87-5", name: "ด.ญ.นลินญา ศรีวังคำ", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "D/C", start_date: "2024-07-15", regimen: "9H", total_days: 252, completion_date: "2025-03-23", next_appt: "2025-09-01", days_left: -162, dx: "LTBI", note: "" },
+            { hn: "63001068", id: "1-4299-01098-69-1", name: "ด.ญ.พรประภา จันทิหล้า", drug_formula: "H150", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", total_days: 252, completion_date: "2025-03-23", next_appt: new Date().toISOString().slice(0, 10), days_left: 0, dx: "LTBI", note: "ติดตามรับยาครบกำหนด" },
+            { hn: "62003177", id: "1-4299-01078-73-8", name: "ด.ญ.ธรรญชนก จันสีทา", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", total_days: 252, completion_date: "2025-03-23", next_appt: new Date(Date.now() + 3*86400000).toISOString().slice(0, 10), days_left: 3, dx: "LTBI", note: "" },
+            { hn: "63000798", id: "1-4209-01460-88-0", name: "ด.ญ.ศิริกัลยา เหล่าอินทร์", drug_formula: "H200", completed_month: "14.8", daily_dose: "0", status: "Active", start_date: "2024-07-15", regimen: "9H", total_days: 252, completion_date: "2025-03-23", next_appt: new Date(Date.now() + 5*86400000).toISOString().slice(0, 10), days_left: 5, dx: "PTB (m+)", note: "อาการดีขึ้น ไม่มีผลข้างเคียงจากยา" }
         ];
 
         createApp({
@@ -638,6 +665,7 @@
                     selectedPatient: null,
                     calcWeight: 50,
                     selectedDrugs: { H: true, R: true, Z: true, E: true, L: false, Am: false, Clr: false, Azt: false },
+                    customRegimenInput: '',
                     newPatient: {
                         hn: '',
                         id: '',
@@ -645,13 +673,15 @@
                         dx: '',
                         regimen: '',
                         drug_formula: '',
-                        daily_dose: '',
-                        start_date: '',
+                        total_days: 168,
+                        daily_dose: '0',
+                        start_date: new Date().toISOString().slice(0, 10),
+                        completion_date: '',
                         next_appt: '',
+                        status: 'Active',
                         note: ''
                     },
-                    // 🔗 Web App URL ล่าสุดจาก Google Apps Script
-                    scriptURL: 'https://script.google.com/macros/s/AKfycbx-fZn1LcRwnZzhbC6Tfvx_g-t4tOM8wmFqrCpS1WY9etKQWdneABvfje2rDlSUN_1lrQ/exec'
+                    scriptURL: 'https://script.google.com/macros/s/AKfycbwRf7a08ieoRGTGDPa3s0ogosxCeC/exec'
                 }
             },
             mounted() {
@@ -693,43 +723,38 @@
                 }
             },
             methods: {
-                // ปรับปรุงฟังก์ชันแปลงวันที่ให้รองรับทุกโครงสร้าง (ISO String, พ.ศ., DD/MM/YYYY)
-                normalizeDate(dateVal) {
-                    if (!dateVal) return '';
-                    let str = String(dateVal).trim();
-                    if (!str) return '';
+                // ตรวจสอบ Preset Regimen
+                isPresetRegimen(reg) {
+                    return ['2HRZE/4HR', '2HRZE/7HR', '9H', '4H', '3HP', '12-18 HEL'].includes(reg);
+                },
 
-                    // หากเป็น ISO string เช่น 2568-08-04T07:00:00.000Z
-                    if (str.includes('T')) {
-                        str = str.split('T')[0];
-                    }
+                // คำนวณจำนวนวันอัตโนมัติเมื่อเลือก Regimen
+                onRegimenChange() {
+                    const reg = this.newPatient.regimen;
+                    let days = 168; // default 6 เดือน
+                    if (reg === '2HRZE/4HR') days = 168;
+                    else if (reg === '2HRZE/7HR' || reg === '9H') days = 252;
+                    else if (reg === '4H') days = 112;
+                    else if (reg === '3HP') days = 84;
+                    else if (reg === '12-18 HEL') days = 504;
 
-                    // รูปแบบ YYYY-MM-DD
-                    if (str.includes('-')) {
-                        let parts = str.split('-');
-                        if (parts.length === 3) {
-                            let y = parseInt(parts[0], 10);
-                            let m = parts[1].padStart(2, '0');
-                            let d = parts[2].padStart(2, '0');
-                            if (y > 2400) y -= 543; // แปลงปี พ.ศ. เป็น ค.ศ.
-                            return `${y}-${m}-${d}`;
+                    this.newPatient.total_days = days;
+                    this.calculateCompletionDate();
+                },
+
+                onCustomRegimenInput() {
+                    this.newPatient.regimen = this.customRegimenInput;
+                },
+
+                // คำนวณวันครบกำหนด off ยา (Completion Date) จาก Start Date + Total Days
+                calculateCompletionDate() {
+                    if (this.newPatient.start_date && this.newPatient.total_days) {
+                        const startDate = new Date(this.newPatient.start_date);
+                        if (!isNaN(startDate.getTime())) {
+                            const compDate = new Date(startDate.getTime() + (parseInt(this.newPatient.total_days, 10) * 86400000));
+                            this.newPatient.completion_date = compDate.toISOString().slice(0, 10);
                         }
                     }
-
-                    // รูปแบบ DD/MM/YYYY หรือ DD/MM/YY
-                    if (str.includes('/')) {
-                        let parts = str.split('/');
-                        if (parts.length === 3) {
-                            let d = parts[0].padStart(2, '0');
-                            let m = parts[1].padStart(2, '0');
-                            let y = parseInt(parts[2], 10);
-                            if (y < 100) y += 2500;
-                            if (y > 2400) y -= 543;
-                            return `${y}-${m}-${d}`;
-                        }
-                    }
-
-                    return str;
                 },
 
                 fetchDataFromCloud() {
@@ -753,7 +778,14 @@
                             const today = new Date();
                             today.setHours(0,0,0,0);
 
-                            this.patients = data.map(p => {
+                            // กรองเฉพาะแถวที่มีข้อมูลจริง (มี HN หรือ ชื่อผู้ป่วย)
+                            const validRows = data.filter(p => {
+                                const hn = String(p.HN || p.hn || p['HN'] || '').trim();
+                                const name = String(p.Name || p.name || p['ชื่อ-นามสกุล'] || p['ชื่อผู้ป่วย'] || '').trim();
+                                return hn !== '' || name !== '';
+                            });
+
+                            this.patients = validRows.map(p => {
                                 // ดึงค่าจากหัวข้อคอลัมน์ทั้งแบบภาษาอังกฤษและภาษาไทยจาก Google Sheet
                                 const rawNextAppt = p.NextAppt || p.next_appt || p['วันนัดรับยาถัดไป'] || p['วันนัดถัดไป'] || p['NextAppt'] || '';
                                 const rawStartDate = p.StartDate || p.start_date || p['วันที่เริ่มยา (พ.ศ)'] || p['วันที่เริ่มยา'] || '';
@@ -792,7 +824,7 @@
                                 };
                             });
                             this.isCloudConnected = true;
-                            this.connectionNotice = 'เชื่อมต่อและดึงข้อมูลสดจาก Google Sheets คลาวด์สำเร็จ! (ดึงข้อมูลแล้ว ' + this.patients.length + ' รายการ)';
+                            this.connectionNotice = 'เชื่อมต่อและดึงข้อมูลสดจาก Google Sheets คลาวด์สำเร็จ! (ดึงข้อมูลถูกต้องแล้ว ' + this.patients.length + ' รายการ)';
                             this.isLoading = false;
                         })
                         .catch(err => {
@@ -818,12 +850,18 @@
                 },
                 registerNewPatient() {
                     this.isLoading = true;
-                    // Add locally first for responsive UI
+                    if (!this.newPatient.start_date) {
+                        this.newPatient.start_date = new Date().toISOString().slice(0, 10);
+                    }
+                    if (!this.newPatient.completion_date) {
+                        this.calculateCompletionDate();
+                    }
+
                     const newEntry = {
                         ...this.newPatient,
-                        status: 'Active',
                         days_left: 0
                     };
+
                     if (newEntry.next_appt) {
                         const today = new Date();
                         today.setHours(0,0,0,0);
@@ -843,14 +881,14 @@
                     .then(() => {
                         alert('ลงทะเบียนผู้ป่วยใหม่เรียบร้อยแล้ว!');
                         this.showAddModal = false;
-                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', daily_dose: '', start_date: '', next_appt: '', note: '' };
+                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', total_days: 168, daily_dose: '0', start_date: new Date().toISOString().slice(0, 10), completion_date: '', next_appt: '', status: 'Active', note: '' };
                         this.isLoading = false;
                     })
                     .catch(err => {
                         console.error('Save Error:', err);
                         alert('บันทึกผู้ป่วยใหม่ในระบบเรียบร้อย (โหมด Offline)');
                         this.showAddModal = false;
-                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', daily_dose: '', start_date: '', next_appt: '', note: '' };
+                        this.newPatient = { hn: '', id: '', name: '', dx: '', regimen: '', drug_formula: '', total_days: 168, daily_dose: '0', start_date: new Date().toISOString().slice(0, 10), completion_date: '', next_appt: '', status: 'Active', note: '' };
                         this.isLoading = false;
                     });
                 },
